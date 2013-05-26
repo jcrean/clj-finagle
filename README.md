@@ -76,6 +76,10 @@ The final step is to define the client API that will interact with your RPC serv
       (onSuccess [return-val]  (println "Hey the server says he's alive (return value is nil since ping() returns void)"))
       (onFailure [throwable]   (println (format "Uh oh something went wrong: %s" throwable))))
 
+## TODO
+
+* Add example of defining thrift types that are used by the service
+
 ## License
 
 Copyright © 2013
