@@ -1,7 +1,6 @@
-(defproject clj-finagle "0.1.0-SNAPSHOT"
+(defproject clj-finagle "0.1.0"
   :description "Clojure wrappers around Twitter's Finagle"
-  ;;:java-source-path "src/java"
-  :url "http://example.com/FIXME"
+  :url "http://github.com/jcrean/clj-finagle"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :repositories [["twitter" "http://maven.twttr.com/"]]
