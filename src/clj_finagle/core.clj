@@ -17,6 +17,14 @@
 (defn rpc-client [service-id]
   (get-in @rpc-registry [service-id :client]))
 
+(defn start-server [service-id]
+  (swap! rpc-registry
+         assoc
+         :service
+         (ServerBuilder/safeBuild
+          (get-in @rpc-registry [service-id :service-impl])
+          (get-in @rpc-registry [service-id :server-builder]))))
+
 (defn shutdown-server [service-id]
   (-> (rpc-server service-id)
       (.close)))
@@ -34,22 +42,28 @@
 
 (def stats-receiver-makers
      {:in-memory
+      (fn [] (InMemoryStatsReceiver.))
+      :default
       (fn [] (InMemoryStatsReceiver.))})
 
 (defn make-stats-receiver [type]
-  (if-let [make-fn (get stats-receiver-makers type)]
-    (make-fn)
-    (throw (RuntimeException. (format "dont know how to make that: %s" type)))))
+  (let [make-fn (or (get stats-receiver-makers type)
+                    (:default stats-receiver-makers))]
+    (make-fn)))
 
 (defmacro def-rpc [service-id & config]
   (let [cfg-map (apply hash-map config)]
-    `(let [server#
-           (ServerBuilder/safeBuild
-            (~(symbol (str (:service cfg-map) "$FinagledService.")) (processor ~(:processor cfg-map)) (TBinaryProtocol$Factory.))
-            (.. (ServerBuilder/get)
-                (name   ~(:name cfg-map))
-                (codec  (ThriftServerFramedCodec/get))
-                (bindTo (InetSocketAddress. ~(:port cfg-map)))))
+    `(let [service-impl#
+           (~(symbol (str (:service cfg-map) "$FinagledService."))
+            (processor ~(:processor cfg-map))
+            (TBinaryProtocol$Factory.))
+
+           server-builder#
+           (.. (ServerBuilder/get)
+               (name   ~(:name cfg-map))
+               (codec  (ThriftServerFramedCodec/get))
+               (bindTo (InetSocketAddress. ~(:port cfg-map))))
+
            client#
            (~(symbol (str (:service cfg-map) "$FinagledClient."))
             (ClientBuilder/safeBuild
@@ -60,8 +74,13 @@
             (TBinaryProtocol$Factory.)
             ~(:name cfg-map)
             (make-stats-receiver (or ~(:stats-receiver cfg-map) :in-memory)))]
-       (register ~service-id {:server server#
-                              :client client#}))))
+
+       (register ~service-id {:server-builder server-builder#
+                              :service-impl   service-impl#
+                              :client client#})
+
+       (when ~(:autostart-server cfg-map)
+         (start-server ~service-id)))))
 
 
 (defmacro def-server [name & config]
