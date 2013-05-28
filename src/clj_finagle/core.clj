@@ -11,6 +11,9 @@
 
 (defonce rpc-registry (atom {}))
 
+(defn lookup-rpc [service-id]
+  (get @rpc-registry service-id))
+
 (defn rpc-server [service-id]
   (get-in @rpc-registry [service-id :server]))
 
@@ -20,7 +23,7 @@
 (defn start-server [service-id]
   (swap! rpc-registry
          assoc
-         :service
+         :server
          (ServerBuilder/safeBuild
           (get-in @rpc-registry [service-id :service-impl])
           (get-in @rpc-registry [service-id :server-builder]))))
@@ -106,12 +109,26 @@
            ~(:name cfg-map)
            ~(make-stats-receiver (:stats-receiver cfg-map))))))
 
+(def ^:dynamic current-service-id)
 
-(defmacro def-client-api [fn-name arglist cfg success-cb failure-cb]
-  `(defn ~fn-name ~arglist
-     (.. (rpc-client ~(:for-service cfg))
-         (~fn-name ~@arglist)
-         (addEventListener
-          (proxy [FutureEventListener] []
-            ~success-cb
-            ~failure-cb)))))
+(defn with-service* [service-id body-fn]
+  (binding [current-service-id service-id]
+    (body-fn)))
+
+(defmacro with-service [service-id & body]
+  `(with-service* ~service-id (fn [] ~@body)))
+
+(defmacro call [fn-call success-cb failure-cb]
+  `(.. (rpc-client current-service-id)
+       ~fn-call
+       (addEventListener
+        (proxy [FutureEventListener] []
+          ~success-cb
+          ~failure-cb))))
+
+(defmacro call-service [service-id fn-call success-cb failure-cb]
+  `(with-service ~service-id
+     (call
+      ~fn-call
+      ~success-cb
+      ~failure-cb)))
