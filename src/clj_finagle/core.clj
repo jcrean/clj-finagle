@@ -17,24 +17,57 @@
 (defn rpc-server [service-id]
   (get-in @rpc-registry [service-id :server]))
 
-(defn rpc-client [service-id]
-  (get-in @rpc-registry [service-id :client]))
-
-(defn start-server [service-id]
-  (swap! rpc-registry
-         assoc-in [service-id :server]
-         (ServerBuilder/safeBuild
-          (get-in @rpc-registry [service-id :service-impl])
-          (get-in @rpc-registry [service-id :server-builder]))))
-
-(defn shutdown-server [service-id]
-  (-> (rpc-server service-id)
-      (.close)))
-
 (defn register-rpc [the-name config]
   (swap! rpc-registry
          update-in [the-name]
          merge config))
+
+(defn rpc-service-impl [service-id]
+  (when-not (get-in @rpc-registry [service-id :service-impl])
+    (register-rpc
+     service-id
+     {:service-impl (clojure.lang.Reflector/invokeConstructor
+                     (resolve (symbol (str (get-in @rpc-registry [service-id :service]) "$FinagledService")))
+                     (to-array [(processor (get-in @rpc-registry [service-id :processor])) (TBinaryProtocol$Factory.)]))}))
+  (get-in @rpc-registry [service-id :service-impl]))
+
+(defn rpc-server-builder [service-id]
+  (when-not (get-in @rpc-registry [service-id :server-builder])
+    (register-rpc
+     service-id
+     {:server-builder (.. (ServerBuilder/get)
+                          (name   (get-in @rpc-registry [service-id :name]))
+                          (codec  (ThriftServerFramedCodec/get))
+                          (bindTo (InetSocketAddress. (get-in @rpc-registry [service-id :port]))))}))
+  (get-in @rpc-registry [service-id :server-builder]))
+
+(defn rpc-client [service-id]
+  (when-not (get-in @rpc-registry [service-id :client])
+    (register-rpc
+     service-id
+     {:client (clojure.lang.Reflector/invokeConstructor
+               (resolve (symbol (str (get-in @rpc-registry [service-id :service]) "$FinagledClient")))
+               (to-array [(ClientBuilder/safeBuild
+                           (.. (ClientBuilder/get)
+                               (hosts (InetSocketAddress. (get-in @rpc-registry [service-id :port])))
+                               (codec (ThriftClientFramedCodec/get))
+                               (hostConnectionLimit (or (get-in @rpc-registry [service-id :host-connection-limit]) 1))))
+                          (TBinaryProtocol$Factory.)
+                          (get-in @rpc-registry [service-id :name])
+                          (make-stats-receiver (get-in @rpc-registry [service-id :stats-receiver]))]))}))
+  (get-in @rpc-registry [service-id :client]))
+
+
+(defn start-server [service-id]
+  (register-rpc
+   service-id
+   {:server (ServerBuilder/safeBuild
+             (rpc-service-impl service-id)
+             (rpc-server-builder service-id))}))
+
+(defn shutdown-server [service-id]
+  (-> (rpc-server service-id)
+      (.close)))
 
 (defn processor [processor-id]
   (get @processor-registry processor-id))
@@ -115,19 +148,6 @@
        (when ~(:autostart-server cfg-map)
          (start-server ~service-id)))))
 
-
-(defmacro def-client [name & config]
-  (let [cfg-map (apply hash-map config)]
-    `(def ~name
-          (~(symbol (str (:service cfg-map) "$FinagledClient."))
-           (ClientBuilder/safeBuild
-            (.. (ClientBuilder/get)
-                (hosts (InetSocketAddress. ~(:port cfg-map)))
-                (codec (ThriftClientFramedCodec/get))
-                (hostConnectionLimit ~(:host-connection-limit cfg-map))))
-           (TBinaryProtocol$Factory.)
-           ~(:name cfg-map)
-           ~(make-stats-receiver (:stats-receiver cfg-map))))))
 
 (def ^:dynamic current-service-id)
 
