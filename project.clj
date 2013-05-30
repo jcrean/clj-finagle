@@ -1,4 +1,4 @@
-(defproject clj-finagle "0.1.2-SNAPSHOT"
+(defproject clj-finagle "0.1.2"
   :description "Clojure wrappers around Twitter's Finagle"
   :url "http://github.com/jcrean/clj-finagle"
   :license {:name "Eclipse Public License"
