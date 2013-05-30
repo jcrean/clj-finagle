@@ -22,8 +22,7 @@
 
 (defn start-server [service-id]
   (swap! rpc-registry
-         assoc
-         :server
+         assoc-in [service-id :server]
          (ServerBuilder/safeBuild
           (get-in @rpc-registry [service-id :service-impl])
           (get-in @rpc-registry [service-id :server-builder]))))
@@ -32,8 +31,10 @@
   (-> (rpc-server service-id)
       (.close)))
 
-(defn register [the-name config]
-  (swap! rpc-registry assoc the-name config))
+(defn register-rpc [the-name config]
+  (swap! rpc-registry
+         update-in [the-name]
+         merge config))
 
 (defn processor [processor-id]
   (get @processor-registry processor-id))
@@ -53,6 +54,35 @@
   (let [make-fn (or (get stats-receiver-makers type)
                     (:default stats-receiver-makers))]
     (make-fn)))
+
+(defn def-server [service-id config]
+  (register-rpc
+   service-id
+   {:server-builder (.. (ServerBuilder/get)
+                        (name   (:name config))
+                        (codec  (ThriftServerFramedCodec/get))
+                        (bindTo (InetSocketAddress. (:port config))))
+    :service-impl   (clojure.lang.Reflector/invokeConstructor
+                     (resolve (symbol (str (:service config) "$FinagledService")))
+                     (to-array [(processor (:processor config)) (TBinaryProtocol$Factory.)]))})
+  (when (:autostart-server config)
+    (start-server service-id)))
+
+(defn def-client [service-id config]
+  (register-rpc
+   service-id
+   {:client
+    (clojure.lang.Reflector/invokeConstructor
+     (resolve (symbol (str (:service config) "$FinagledClient")))
+     (to-array [(ClientBuilder/safeBuild
+                 (.. (ClientBuilder/get)
+                     (hosts (InetSocketAddress. (:port config)))
+                     (codec (ThriftClientFramedCodec/get))
+                     (hostConnectionLimit (or (:host-connection-limit config) 1))))
+                (TBinaryProtocol$Factory.)
+                (:name config)
+                (make-stats-receiver (:stats-receiver config))]))}))
+
 
 (defmacro def-rpc [service-id & config]
   (let [cfg-map (apply hash-map config)]
@@ -78,23 +108,13 @@
             ~(:name cfg-map)
             (make-stats-receiver (or ~(:stats-receiver cfg-map) :in-memory)))]
 
-       (register ~service-id {:server-builder server-builder#
-                              :service-impl   service-impl#
-                              :client client#})
+       (register-rpc ~service-id {:server-builder server-builder#
+                                  :service-impl   service-impl#
+                                  :client client#})
 
        (when ~(:autostart-server cfg-map)
          (start-server ~service-id)))))
 
-
-(defmacro def-server [name & config]
-  (let [cfg-map (apply hash-map config)]
-    `(def ~name
-          (ServerBuilder/safeBuild
-           (~(symbol (str (:service cfg-map) "$FinagledService.")) ~(:processor cfg-map) (TBinaryProtocol$Factory.))
-           (.. (ServerBuilder/get)
-               (name   ~(:name cfg-map))
-               (codec  (ThriftServerFramedCodec/get))
-               (bindTo (InetSocketAddress. ~(:port cfg-map))))))))
 
 (defmacro def-client [name & config]
   (let [cfg-map (apply hash-map config)]
