@@ -159,12 +159,14 @@
   `(with-service* ~service-id (fn [] ~@body)))
 
 (defmacro call [fn-call success-cb failure-cb]
-  `(.. (rpc-client current-service-id)
-       ~fn-call
-       (addEventListener
-        (proxy [FutureEventListener] []
-          ~success-cb
-          ~failure-cb))))
+  `(do
+     (.. (rpc-client current-service-id)
+         ~fn-call
+         (addEventListener
+          (proxy [FutureEventListener] []
+            ~success-cb
+            ~failure-cb)))
+     :request-sent-to-server))
 
 (defmacro call-service [service-id fn-call success-cb failure-cb]
   `(with-service ~service-id
