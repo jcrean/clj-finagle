@@ -1,4 +1,4 @@
-(defproject clj-finagle "0.1.1-SNAPSHOT"
+(defproject clj-finagle "0.1.1"
   :description "Clojure wrappers around Twitter's Finagle"
   :url "http://github.com/jcrean/clj-finagle"
   :license {:name "Eclipse Public License"
@@ -8,6 +8,5 @@
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [com.twitter/finagle-core "6.3.0"]
                  [com.twitter/finagle-thrift "6.3.0"]
-                 ;; [com.twitter/util-core "6.3.3"]
                  [com.twitter/scrooge-runtime "3.1.1"]
                  [org.apache.thrift/libthrift "0.8.0"]])
